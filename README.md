@@ -22,6 +22,14 @@ nest.Connect(neurons, spike_det)
 # Setting termination criterion
 nest.SetStatus(spike_det, {'frequency_thresh':200.0, 'length_thresh':50.0, 'n_connected_neurons':len(exc_neurons)})
 ...  # Run your simulation
+try:
+    nest.Simulate(200)
+except nest.NESTError as E:
+    E_msg = E.args[0]
+    if E_msg.startswith('UnstableSpiking'):
+        print(E_msg)
+    else:
+        raise
 ```
 In this example, if your average network activity stays beyond 200Hz for longer than 50ms, a nest.NESTError will be
 thrown with message 'UnstableSpiking in Simulate_d: The Network seems to be in a regime of unstable spiking, terminating
