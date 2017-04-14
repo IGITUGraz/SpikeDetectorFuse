@@ -80,6 +80,7 @@ mynest::spike_detector_fuse::Parameters_::Parameters_()
 mynest::spike_detector_fuse::State_::State_()
     : is_receiving_spikes(false)
     , n_current_spikes(0)
+    , is_unstable(false)
     , danger_level(0.0)
 {}
 
@@ -161,11 +162,20 @@ mynest::spike_detector_fuse::calibrate()
     // This is the case where no termination is performed
     V_.danger_decay_factor = 0.0;
     V_.danger_increment_step = 0.0;
+
+    if (get_thread() == 0) {
+      std::string msg;
+      msg += "GID: ";
+      msg += std::to_string(this->get_gid());
+      msg += " Spike Detector Not Fusing";
+      LOG( nest::M_WARNING, "spike_detector_fuse::calibrate", msg);
+    }
   }
   else {
     // Calibrate the decay and increment parameters based on input parameters
     double steps_per_ms = nest::kernel().simulation_manager.get_clock().delay_ms_to_steps(1);
     double min_delay = nest::kernel().connection_manager.get_min_delay();
+    size_t n_siblings = nest::kernel().node_manager.get_thread_siblings( get_gid() )->num_thread_siblings();
 
     // Discretizing length in terms of simulation update steps
     int length_update_steps = int(P_.length_thresh * steps_per_ms / min_delay + 0.5);
@@ -179,8 +189,8 @@ mynest::spike_detector_fuse::calibrate()
     // Calculating scale factor by requiring that the steady state danger for a network spiking at frequency_thresh
     // is 1
     //
-    // i.e. (P_.frequency_thresh*P_.n_connected_neurons*V_.danger_increment_step)/(1-V_.danger_decay_factor) = 1
-    V_.danger_increment_step = (1 - V_.danger_decay_factor)/(P_.frequency_thresh*P_.n_connected_neurons*1e-3);
+    // i.e. (P_.frequency_thresh*(P_.n_connected_neurons/n_siblings)*V_.danger_increment_step)/(1-V_.danger_decay_factor) = 1
+    V_.danger_increment_step = (1 - V_.danger_decay_factor)*n_siblings/(P_.frequency_thresh*P_.n_connected_neurons*1e-3);
   }
 
   device_.calibrate();
@@ -205,28 +215,27 @@ mynest::spike_detector_fuse::update( nest::Time const&, const long, const long )
   B_.spikes_[ nest::kernel().event_delivery_manager.read_toggle() ].clear();
 
   // Implementing fusing mechanics
-  // Receive the spikes from all siblings, and update the danger level, only if rank 0 thread
-  // Also, check if the danger level exceeds 1 and throw exception if that is the case.
-  if (local_receiver_ && get_thread() == 0) {
-    const nest::SiblingContainer* siblings =
-        nest::kernel().node_manager.get_thread_siblings( get_gid() );
-    std::vector< nest::Node* >::const_iterator sibling;
-    for ( sibling = siblings->begin() + 1; sibling != siblings->end();
-          ++sibling ) {
-      const spike_detector_fuse &sib_spike_detector_w_check = downcast<spike_detector_fuse>(*(*sibling));
-      S_.n_current_spikes += sib_spike_detector_w_check.S_.n_current_spikes;
-    }
+  S_.danger_level *= V_.danger_decay_factor;
 
-    S_.danger_level *= V_.danger_decay_factor;
-    // The count is only considered if the S_.is_receiving_spikes is true indicating that the count is actually the
-    // count of this time step. this avoids using un-cleared counts which might happen if no spikes are received in
-    // a given simulation slice
-    if (S_.is_receiving_spikes)
-      S_.danger_level += V_.danger_increment_step * S_.n_current_spikes;
+  // The count is only considered if the S_.is_receiving_spikes is true indicating that the count is actually the
+  // count of this time step. this avoids using un-cleared counts which might happen if no spikes are received in
+  // a given simulation slice
+  if (S_.is_receiving_spikes) {
+    S_.danger_level += V_.danger_increment_step * S_.n_current_spikes;
+  }
 
-    if (S_.danger_level > 1.0) {
-      throw UnstableSpiking();
-    }
+  bool any_are_unstable = false;
+  const nest::SiblingContainer* siblings =
+      nest::kernel().node_manager.get_thread_siblings( get_gid() );
+  std::vector< nest::Node* >::const_iterator sibling;
+  for ( sibling = siblings->begin(); sibling != siblings->end();
+        ++sibling ) {
+    const spike_detector_fuse &sib_spike_detector_fuse = downcast<spike_detector_fuse>(*(*sibling));
+    any_are_unstable |= sib_spike_detector_fuse.S_.is_unstable;
+  }
+
+  if (any_are_unstable) {
+    throw UnstableSpiking();
   }
 
   // Update relevant state flags
@@ -276,6 +285,8 @@ mynest::spike_detector_fuse::handle( nest::SpikeEvent& e )
     // for the current simulation step.
     if (not S_.is_receiving_spikes) {
       S_.n_current_spikes = 0;
+      if (S_.danger_level > 1.0)
+        S_.is_unstable = true;
       S_.is_receiving_spikes = true;
     }
 

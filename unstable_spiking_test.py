@@ -9,6 +9,8 @@ from nest import raster_plot
 
 nest.Install('spikedetfusemodule')
 
+nest.SetKernelStatus({'total_num_virtual_procs': 12})
+
 exc_neurons = nest.Create('iaf_neuron', 100)
 current_gen = nest.Create('noise_generator', params={'mean': 400.0, 'std': 100.0})    
 spike_det = nest.Create('spike_detector_fuse')
