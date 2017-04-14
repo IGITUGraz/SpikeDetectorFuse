@@ -80,7 +80,7 @@ mynest::spike_detector_fuse::Parameters_::Parameters_()
 mynest::spike_detector_fuse::State_::State_()
     : is_receiving_spikes(false)
     , n_current_spikes(0)
-    , is_unstable(false)
+    , unstable_at_slice(-1)
     , danger_level(0.0)
 {}
 
@@ -197,7 +197,7 @@ mynest::spike_detector_fuse::calibrate()
 }
 
 void
-mynest::spike_detector_fuse::update( nest::Time const&, const long, const long )
+mynest::spike_detector_fuse::update( nest::Time const& Now, const long from, const long to)
 {
 
   for ( std::vector< nest::Event* >::iterator e =
@@ -214,40 +214,6 @@ mynest::spike_detector_fuse::update( nest::Time const&, const long, const long )
   // memory for the next round
   B_.spikes_[ nest::kernel().event_delivery_manager.read_toggle() ].clear();
 
-  /*
-   * Implementing the fusing mechanics.
-   *
-   * For successful raising of exceptions with multiple threads, the exception must
-   * be thrown by all threads at the same time slice else nest enters a deadlock
-   * situation.
-   *
-   * The way this is accomplished is as follows:
-   *
-   * 1.  There are 4 state variables per sibling that are necessary:
-   *
-   *     a.  danger_level
-   *     b.  n_current_spikes
-   *     c.  is_receiving_spikes
-   *     d.  is_unstable
-   *
-   * 2.  Whenever spikes arrive at a sibling, they are counted into the variable
-   *     `n_current_spikes`.
-   *
-   * 3.  The variable `is_receiving_spikes` represents the state of the spike
-   *     recorder. It is useful for the spike handler to know the first time it is
-   *     called in a slice, as well as for the update function to know if the
-   *     counter was reset or not this slice.
-   *
-   * 4.  The update function updates the danger level based on the number of spikes
-   *     in the current slice.
-   *
-   * 5.  Then the spike handler observes this danger level and sets the
-   *     `is_unstable` flag
-   *
-   * 6.  The update function is then responsible for observing the is_unstable flag
-   *     of all its siblings and firing if any one is set. This way all the siblings
-   *     throw an exceptions at the same time step and the deadlock is avoided
-   */
   S_.danger_level *= V_.danger_decay_factor;
 
   // The count is only considered if the S_.is_receiving_spikes is true indicating that the count is actually the
@@ -257,17 +223,25 @@ mynest::spike_detector_fuse::update( nest::Time const&, const long, const long )
     S_.danger_level += V_.danger_increment_step * S_.n_current_spikes;
   }
 
-  bool any_are_unstable = false;
+  // minimum non-minus-1 unstable slice
+  long min_unstable_slice = -1;
   const nest::SiblingContainer* siblings =
       nest::kernel().node_manager.get_thread_siblings( get_gid() );
   std::vector< nest::Node* >::const_iterator sibling;
+
   for ( sibling = siblings->begin(); sibling != siblings->end();
         ++sibling ) {
     const spike_detector_fuse &sib_spike_detector_fuse = downcast<spike_detector_fuse>(*(*sibling));
-    any_are_unstable |= sib_spike_detector_fuse.S_.is_unstable;
+    long sib_unstable_at_slice = sib_spike_detector_fuse.S_.unstable_at_slice;
+
+    if (sib_unstable_at_slice >= 0
+        and (min_unstable_slice == -1 || min_unstable_slice > sib_unstable_at_slice)) {
+      min_unstable_slice = sib_unstable_at_slice;
+    }
   }
 
-  if (any_are_unstable) {
+  // Spike at the one plus min unstable slice
+  if (min_unstable_slice >= 0 and min_unstable_slice+1 == nest::kernel().simulation_manager.get_slice()) {
     throw UnstableSpiking();
   }
 
@@ -318,8 +292,8 @@ mynest::spike_detector_fuse::handle( nest::SpikeEvent& e )
     // for the current simulation step.
     if (not S_.is_receiving_spikes) {
       S_.n_current_spikes = 0;
-      if (S_.danger_level > 1.0)
-        S_.is_unstable = true;
+      if (S_.danger_level > 1.0 and S_.unstable_at_slice == -1)
+        S_.unstable_at_slice = nest::kernel().simulation_manager.get_slice();
       S_.is_receiving_spikes = true;
     }
 

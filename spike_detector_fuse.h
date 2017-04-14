@@ -250,7 +250,7 @@ private:
   {
     double danger_level;
     bool is_receiving_spikes;
-    bool is_unstable;
+    long unstable_at_slice;
     unsigned int n_current_spikes;
 
     State_();
