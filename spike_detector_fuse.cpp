@@ -214,7 +214,40 @@ mynest::spike_detector_fuse::update( nest::Time const&, const long, const long )
   // memory for the next round
   B_.spikes_[ nest::kernel().event_delivery_manager.read_toggle() ].clear();
 
-  // Implementing fusing mechanics
+  /*
+   * Implementing the fusing mechanics.
+   *
+   * For successful raising of exceptions with multiple threads, the exception must
+   * be thrown by all threads at the same time slice else nest enters a deadlock
+   * situation.
+   *
+   * The way this is accomplished is as follows:
+   *
+   * 1.  There are 4 state variables per sibling that are necessary:
+   *
+   *     a.  danger_level
+   *     b.  n_current_spikes
+   *     c.  is_receiving_spikes
+   *     d.  is_unstable
+   *
+   * 2.  Whenever spikes arrive at a sibling, they are counted into the variable
+   *     `n_current_spikes`.
+   *
+   * 3.  The variable `is_receiving_spikes` represents the state of the spike
+   *     recorder. It is useful for the spike handler to know the first time it is
+   *     called in a slice, as well as for the update function to know if the
+   *     counter was reset or not this slice.
+   *
+   * 4.  The update function updates the danger level based on the number of spikes
+   *     in the current slice.
+   *
+   * 5.  Then the spike handler observes this danger level and sets the
+   *     `is_unstable` flag
+   *
+   * 6.  The update function is then responsible for observing the is_unstable flag
+   *     of all its siblings and firing if any one is set. This way all the siblings
+   *     throw an exceptions at the same time step and the deadlock is avoided
+   */
   S_.danger_level *= V_.danger_decay_factor;
 
   // The count is only considered if the S_.is_receiving_spikes is true indicating that the count is actually the
