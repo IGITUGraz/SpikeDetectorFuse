@@ -1,3 +1,5 @@
 .idea/
 /**/*build*
+/__pycache__
 /raster_plot.png
+/nestdump.txt

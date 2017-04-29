@@ -78,9 +78,7 @@ mynest::spike_detector_fuse::Parameters_::Parameters_()
 {}
 
 mynest::spike_detector_fuse::State_::State_()
-    : is_receiving_spikes(false)
-    , n_current_spikes(0)
-    , unstable_at_slice(-1)
+    : unstable_at_slice(-1)
     , danger_level(0.0)
 {}
 
@@ -123,7 +121,7 @@ mynest::spike_detector_fuse::init_buffers_()
 {
   device_.init_buffers();
 
-  std::vector< std::vector< nest::Event* > > tmp( 2, std::vector< nest::Event* >() );
+  std::vector< std::vector< nest::SpikeEvent* > > tmp( 2, std::vector< nest::SpikeEvent* >() );
   B_.spikes_.swap( tmp );
 }
 
@@ -183,8 +181,8 @@ mynest::spike_detector_fuse::calibrate()
     // Calculating decay_factor from the following transient equation describing convergence of danger to maximum /
     // steady state:
     //
-    //     danger_decay_factor^length_update_steps = 0.01
-    V_.danger_decay_factor = std::pow(0.01, 1.0/length_update_steps);
+    //     danger_decay_factor^length_update_steps = 0.3
+    V_.danger_decay_factor = std::pow(0.3, 1.0/length_update_steps);
 
     // Calculating scale factor by requiring that the steady state danger for a network spiking at frequency_thresh
     // is 1
@@ -200,12 +198,16 @@ void
 mynest::spike_detector_fuse::update( nest::Time const& Now, const long from, const long to)
 {
 
-  for ( std::vector< nest::Event* >::iterator e =
+  // Get count of spikes received, used to update danger level
+  long n_current_spikes = 0;
+
+  for ( std::vector< nest::SpikeEvent* >::iterator e =
       B_.spikes_[ nest::kernel().event_delivery_manager.read_toggle() ].begin();
         e != B_.spikes_[ nest::kernel().event_delivery_manager.read_toggle() ].end();
         ++e )
   {
     assert( *e != 0 );
+    n_current_spikes += (*e)->get_multiplicity();
     device_.record_event( **e );
     delete *e;
   }
@@ -215,13 +217,7 @@ mynest::spike_detector_fuse::update( nest::Time const& Now, const long from, con
   B_.spikes_[ nest::kernel().event_delivery_manager.read_toggle() ].clear();
 
   S_.danger_level *= V_.danger_decay_factor;
-
-  // The count is only considered if the S_.is_receiving_spikes is true indicating that the count is actually the
-  // count of this time step. this avoids using un-cleared counts which might happen if no spikes are received in
-  // a given simulation slice
-  if (S_.is_receiving_spikes) {
-    S_.danger_level += V_.danger_increment_step * S_.n_current_spikes;
-  }
+  S_.danger_level += V_.danger_increment_step * n_current_spikes;
 
   // minimum non-minus-1 unstable slice
   long min_unstable_slice = -1;
@@ -245,8 +241,10 @@ mynest::spike_detector_fuse::update( nest::Time const& Now, const long from, con
     throw UnstableSpiking();
   }
 
-  // Update relevant state flags
-  S_.is_receiving_spikes = false;
+  // Check if the detector is unstable in this thread, and assign the S_.unstable_at_slice
+  // if not already assigned
+  if (S_.danger_level > 1.0 and S_.unstable_at_slice == -1)
+    S_.unstable_at_slice = nest::kernel().simulation_manager.get_slice();
 }
 
 void
@@ -288,18 +286,6 @@ mynest::spike_detector_fuse::handle( nest::SpikeEvent& e )
   {
     assert( e.get_multiplicity() > 0 );
 
-    // If this is the first call of handle in the current simulation step, then reset the spike counter
-    // for the current simulation step.
-    if (not S_.is_receiving_spikes) {
-      S_.n_current_spikes = 0;
-      if (S_.danger_level > 1.0 and S_.unstable_at_slice == -1)
-        S_.unstable_at_slice = nest::kernel().simulation_manager.get_slice();
-      S_.is_receiving_spikes = true;
-    }
-
-    // Add The Spikes to the counter to be used to calculate danger level
-    S_.n_current_spikes += e.get_multiplicity();
-
     long dest_buffer;
     if ( nest::kernel()
         .modelrange_manager.get_model_of_gid( e.get_sender_gid() )
@@ -313,7 +299,7 @@ mynest::spike_detector_fuse::handle( nest::SpikeEvent& e )
     for ( int i = 0; i < e.get_multiplicity(); ++i )
     {
       // We store the complete events
-      nest::Event* event = e.clone();
+      nest::SpikeEvent* event = e.clone();
       B_.spikes_[ dest_buffer ].push_back( event );
     }
   }

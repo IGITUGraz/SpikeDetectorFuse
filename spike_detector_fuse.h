@@ -231,7 +231,7 @@ private:
    */
   struct Buffers_
   {
-    std::vector< std::vector< nest::Event* > > spikes_;
+    std::vector< std::vector< nest::SpikeEvent* > > spikes_;
   };
 
   struct Parameters_
@@ -249,9 +249,7 @@ private:
   struct State_
   {
     double danger_level;
-    bool is_receiving_spikes;
     long unstable_at_slice;
-    unsigned int n_current_spikes;
 
     State_();
   };
