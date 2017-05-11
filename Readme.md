@@ -7,6 +7,7 @@ This test creates a deadlock in NEST v2.12.0 by throwing an error from exactly o
 ##  Installation requirements
 
 1.  The test is in python3 so it requires the appropriately compiled NEST before installation.
+2.  The `nest-config` executable fof the appropriate nest must be in path
 2.  In order to use the modules in python, the modules directory must be a part of LD_LIBRARY_PATH
 
 ##  How to run
