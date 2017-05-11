@@ -1,16 +1,15 @@
 # Spike Detector Fuse for NEST
 This module monitors the spiking activity of the network, and throws a python exception if the spiking activity goes
-beyond the given threshold for the given length of time.
+beyond the given threshold for the given length of time. See the [comments in the
+code](https://github.com/IGITUGraz/SpikeDetectorFuse/blob/master/spike_detector_fuse.h#L39) for more details.
 
-It is a module for the [NEST simulator](http://www.nest-simulator.org).
+It is a module for the [NEST simulator](http://www.nest-simulator.org). 
 
 # Installation
-With the appropriate `nest-config` in your PATH:
-1. First create a directory for the build, say `cmake-build`
-2. `cd cmake-build && cmake ..`
-3. `make && make install`
-4. Run the line `export LD_LIBRARY_PATH=/path/to/nest/installation/lib/nest/:$LD_LIBRARY_PATH` or add it to your
-   `~/.bashrc`/`~/.zshrc`/`~/.profile`
+With the appropriate `nest-config` in your PATH run `./install.sh` in the root directory.
+
+Once the installation is done, add `/path/to/nest/installation/lib/nest/` to your `LD_LIBRARY_PATH` environment
+variable.
 
 # Usage
 ```
@@ -34,3 +33,7 @@ except nest.NESTError as E:
 In this example, if your average network activity stays beyond 200Hz for longer than 50ms, a nest.NESTError will be
 thrown with message 'UnstableSpiking in Simulate_d: The Network seems to be in a regime of unstable spiking, terminating
 simulation'
+
+# Important notes
+* nest.Simulate() cannot be run again without resetting the kernel by running nest.ResetKernel() once an unstable spiking exception is thrown
+* Data upto the simulation slice where the exception is thrown can be safely retrieved and parsed even if the above exception is thrown.
