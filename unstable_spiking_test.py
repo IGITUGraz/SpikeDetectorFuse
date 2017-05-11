@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 import numpy as np
-import tempfile
 import nest
 
-from file_redirector import stdout_redirected
+from file_redirector import stdout_discarded
 
 nest.Install('spikedetfusemodule')
 
@@ -37,7 +36,7 @@ except nest.NESTError as E:
         print()
     else:
         raise
-except:
+except Exception:
     raise
 else:
     raise RuntimeError("Test FAILED. NEST incorrectly ran the spike_detector_w_check with illegal"
@@ -51,7 +50,7 @@ for i, (N_src,
         freq_thresh, 
         length_thresh) in enumerate(zip(*params_dict_vals_cartprod)):
 
-    with stdout_redirected('nestdump.txt'):
+    with stdout_discarded():
         nest.ResetKernel()
         nest.SetKernelStatus({'total_num_virtual_procs': N_threads})
     spike_gen = nest.Create('poisson_generator', params={'rate':rate})
@@ -73,7 +72,7 @@ for i, (N_src,
     print("length_thresh : {}".format(length_thresh))
 
     try:
-        with stdout_redirected('nestdump.txt'):
+        with stdout_discarded():
             nest.Simulate(500)
     except nest.NESTError as E:
         E_msg = E.args[0]
@@ -83,7 +82,7 @@ for i, (N_src,
             print("  UNSTABLE at {:.4f} ms".format(nest.GetKernelStatus()['time']))
         else:
             raise
-    except:
+    except Exception:
         raise
     else:
         assert rate <= freq_thresh, \
