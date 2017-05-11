@@ -2,7 +2,7 @@
 import numpy as np
 import nest
 
-from file_redirector import stdout_discarded
+from stdout_redirector import stdout_discarded
 
 nest.Install('spikedetfusemodule')
 
