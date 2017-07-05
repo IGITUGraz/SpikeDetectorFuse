@@ -5,7 +5,7 @@ if [ ! -d ./build_SpikeDetectorFuse ]; then
 fi
 
 cd ./build_SpikeDetectorFuse
-cmake -Dwith-nest=`which nest-config` -DCMAKE_CXX_FLAGS='-std=c++11 -Wno-unused-variable -Wno-reorder' ..
+cmake -Dwith-nest=`which nest-config` -DCMAKE_CXX_FLAGS='-Wno-unused-variable -Wno-reorder' ..
 make -j4
 make install
 cd ..

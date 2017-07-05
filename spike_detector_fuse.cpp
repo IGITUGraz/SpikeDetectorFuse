@@ -34,6 +34,9 @@
 #include "kernel_manager.h"
 #include "sibling_container.h"
 
+// Misc includes
+#include "misc.h"
+
 // Includes from sli:
 #include "arraydatum.h"
 #include "dict.h"
@@ -164,7 +167,7 @@ mynest::spike_detector_fuse::calibrate()
     if (get_thread() == 0) {
       std::string msg;
       msg += "GID: ";
-      msg += std::to_string(this->get_gid());
+      msg += numberToString(this->get_gid());
       msg += " Spike Detector Not Fusing";
       LOG( nest::M_WARNING, "spike_detector_fuse::calibrate", msg);
     }
